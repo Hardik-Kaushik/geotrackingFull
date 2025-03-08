@@ -1,0 +1,662 @@
+
+</html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Leaflet Map with Geofencing, Interior Mapping, Live Location</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+
+  <style>
+    /* Map and page layout */
+    #map {
+      height: 80vh;
+      margin-bottom: 20px;
+    }
+
+    /* Control and option buttons */
+    button {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      margin: 5px;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background-color 0.3s ease, transform 0.2s ease;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+      transform: scale(1.05);
+    }
+
+    button:active {
+      transform: scale(0.95);
+    }
+
+    button[disabled], button[disabled]:hover {
+      background-color: #6c757d;
+      cursor: not-allowed;
+    }
+
+    /* Styling for notification */
+    #notification {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background-color: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 10px;
+      border-radius: 5px;
+      display: none;
+      font-size: 14px;
+    }
+
+    /* Geofence controls */
+    #controls, #geofence-list, #location-options {
+      margin-top: 10px;
+      text-align: center;
+    }
+
+    #current-floor {
+      display: inline-block;
+      margin-left: 15px;
+      font-weight: bold;
+      font-size: 16px;
+    }
+
+    /* Dropdown selector */
+    select {
+      padding: 10px;
+      border-radius: 5px;
+      border: 1px solid #3c96f7;
+      background-color: #f8f9fa;
+      margin: 5px;
+      cursor: pointer;
+    }
+
+    select:focus {
+      border-color: #0f71d9;
+      outline: none;
+    }
+
+    /* Page content */
+    .content {
+      text-align: center;
+      margin-top: 20px;
+    }
+
+    .content h1 {
+      font-size: 2rem;
+      color: #343a40;
+    }
+
+    .content p {
+      font-size: 1.1rem;
+      color: #6c757d;
+      margin-bottom: 20px;
+    }
+
+    .content a.btn {
+      display: inline-block;
+      background-color: #28a745;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 5px;
+      text-decoration: none;
+      transition: background-color 0.3s ease, transform 0.2s ease;
+    }
+
+    .content a.btn:hover {
+      background-color: #218838;
+      transform: scale(1.05);
+    }
+
+    .content a.btn:active {
+      transform: scale(0.95);
+    }
+
+
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="controls" style="display: none;">
+    <button id="prev-floor">Previous Floor</button>
+    <button id="next-floor">Next Floor</button>
+    <button id="finish-geofence">Finish Geofence</button>
+    <button id="new-geofence" style="display: none;">New Geofence</button>
+    <span id="current-floor">Current Floor: 1</span>
+  </div>
+  <div id="geofence-list">
+    <button id="view-previous-geofences">View Previous Geofences</button>
+    <select id="geofence-selector"></select>
+    <select id="floor-selector" style="display: none;"></select>
+  </div>
+  <div id="location-options">
+    <button id="live-location-btn">Go to Live Location</button>
+    <button id="start-interior-navigation">Start Interior Navigation</button>
+    <button id="stop-interior-navigation" style="display: none;">Stop Interior Navigation</button>
+  </div>
+  <div id="notification"></div>
+  <div class="content">
+    <a href="/home" class="btn">Back to Home</a>
+  </div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
+  <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+  <script>
+    // Initialize the map
+    var map = L.map('map').setView([51.505, -0.09], 18);
+
+    // Add tile layers
+    var osmStandard = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: 'Map data &copy; OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(map);
+
+    var googleStreet = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+      attribution: 'Map data &copy; Google',
+      maxZoom: 20,
+      subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
+    });
+
+    var googleSatellite = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+      attribution: 'Map data &copy; Google',
+      maxZoom: 20,
+      subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
+    });
+
+    var baseLayers = {
+      "Standard OSM": osmStandard,
+      "Google Street": googleStreet,
+      "Google Satellite": googleSatellite
+    };
+
+    L.control.layers(baseLayers).addTo(map);
+
+    // Geofence-related variables
+    var drawnItems = new L.FeatureGroup();
+    var geofences = {};
+    var currentGeofenceId = null;
+    var currentFloor = 1;
+    var majorGeofenceLayerGroup = new L.FeatureGroup();
+    var isDrawingGeofence = false;
+    var liveLocationMarker = null;
+    var interiorNavigationInterval = null;
+
+    map.addLayer(drawnItems);
+
+    // Draw control
+    var geofenceDrawControl = new L.Control.Draw({
+      edit: {
+        featureGroup: drawnItems,
+        remove: false
+      },
+      draw: {
+        polygon: true,
+        rectangle: true,
+        polyline: false,
+        circle: false,
+        marker: false,
+        circlemarker: false
+      }
+    });
+    map.addControl(geofenceDrawControl);
+
+    // Add geocoder control for searching locations
+    var geocoder = L.Control.geocoder().addTo(map);
+
+    // Handle geofence creation
+    map.on(L.Draw.Event.CREATED, function (e) {
+      var layer = e.layer;
+      drawnItems.addLayer(layer);
+
+      if (!currentGeofenceId) {
+        // First geofence
+        majorGeofenceLayerGroup.addLayer(layer);
+        map.addLayer(majorGeofenceLayerGroup);
+
+        if (e.layerType === 'polygon' || e.layerType === 'rectangle') {
+          var name = prompt("Enter the name of this geofence:");
+          if (name !== null && name.trim() !== "") {
+            var numberOfFloors = prompt("Enter the number of floors in this building:");
+            if (numberOfFloors !== null && !isNaN(numberOfFloors)) {
+              numberOfFloors = parseInt(numberOfFloors);
+              var id = L.stamp(layer);
+              geofences[id] = { layer: layer, name: name, floors: numberOfFloors, currentFloor: 1, markings: {}, subareas: {} };
+              geofences[id].layer.bindPopup("Name: " + name + "<br>Floors: " + numberOfFloors).openPopup();
+              currentGeofenceId = id;
+
+              for (let i = 1; i <= numberOfFloors; i++) {
+                geofences[id].markings[i] = new L.FeatureGroup();
+                geofences[id].subareas[i] = new L.FeatureGroup();
+              }
+
+              map.removeControl(geofenceDrawControl);
+              addInteriorMappingControls();
+              document.getElementById('controls').style.display = 'block';
+              addFloorSelector();
+              showCurrentFloorMarkings();
+              showCurrentFloorSubareas();
+              document.getElementById('new-geofence').style.display = 'block';
+            } else {
+              alert("Invalid number of floors.");
+              drawnItems.removeLayer(layer);
+            }
+          } else {
+            alert("Geofence name cannot be empty.");
+            drawnItems.removeLayer(layer);
+          }
+        }
+      } else {
+        // Subsequent geofences (subareas)
+        if (isDrawingGeofence) {
+          var areaName = prompt("Enter the name of this area (e.g., Bathroom, Kitchen, Room):");
+          if (areaName !== null && areaName.trim() !== "") {
+            geofences[currentGeofenceId].subareas[currentFloor].addLayer(layer.bindPopup(areaName));
+            map.addLayer(geofences[currentGeofenceId].subareas[currentFloor]);
+            layer.bindPopup("Area: " + areaName).openPopup();
+          } else {
+            alert("Area name cannot be empty.");
+            drawnItems.removeLayer(layer);
+          }
+        } else {
+          drawnItems.removeLayer(layer);
+        }
+      }
+    });
+
+    function addInteriorMappingControls() {
+      var interiorDrawControl = new L.Control.Draw({
+        edit: {
+          featureGroup: drawnItems,
+          remove: true
+        },
+        draw: {
+          polygon: true,
+          polyline: false,
+          rectangle: true,
+          circle: false,
+          marker: false,
+          circlemarker: false
+        }
+      });
+      map.addControl(interiorDrawControl);
+
+      isDrawingGeofence = true;
+    }
+
+    function addFloorSelector() {
+      var floorSelector = document.getElementById('floor-selector');
+      floorSelector.innerHTML = '';
+
+      for (let i = 1; i <= geofences[currentGeofenceId].floors; i++) {
+        var option = document.createElement('option');
+        option.value = i;
+        option.textContent = 'Floor ' + i;
+        floorSelector.appendChild(option);
+      }
+
+      floorSelector.style.display = 'block';
+      floorSelector.addEventListener('change', function() {
+        currentFloor = parseInt(this.value);
+        updateFloorDisplay();
+        showCurrentFloorMarkings();
+        showCurrentFloorSubareas();
+        if (interiorNavigationInterval) {
+          updateInteriorLocation(true); // Update location for new floor
+        }
+      });
+
+      floorSelector.value = currentFloor;
+    }
+
+    document.getElementById('next-floor').addEventListener('click', function () {
+      if (currentFloor < geofences[currentGeofenceId].floors) {
+        currentFloor++;
+        updateFloorDisplay();
+        showCurrentFloorMarkings();
+        showCurrentFloorSubareas();
+        if (interiorNavigationInterval) {
+          updateInteriorLocation(true);
+        }
+      } else {
+        alert("You are on the highest floor.");
+      }
+    });
+
+    document.getElementById('prev-floor').addEventListener('click', function () {
+      if (currentFloor > 1) {
+        currentFloor--;
+        updateFloorDisplay();
+        showCurrentFloorMarkings();
+        showCurrentFloorSubareas();
+        if (interiorNavigationInterval) {
+          updateInteriorLocation(true);
+        }
+      } else {
+        alert("You are on the lowest floor.");
+      }
+    });
+
+    function updateFloorDisplay() {
+      document.getElementById('current-floor').textContent = 'Current Floor: ' + currentFloor;
+    }
+
+    function showCurrentFloorMarkings() {
+      Object.values(geofences[currentGeofenceId].markings).forEach(function (group) {
+        map.removeLayer(group);
+      });
+      map.addLayer(geofences[currentGeofenceId].markings[currentFloor]);
+    }
+
+    function showCurrentFloorSubareas() {
+      Object.values(geofences[currentGeofenceId].subareas).forEach(function (group) {
+        map.removeLayer(group);
+      });
+      map.addLayer(geofences[currentGeofenceId].subareas[currentFloor]);
+    }
+
+    document.getElementById('finish-geofence').addEventListener('click', function () {
+      if (currentGeofenceId) {
+        var geofenceSelector = document.getElementById('geofence-selector');
+        var option = document.createElement('option');
+        option.value = currentGeofenceId;
+        option.textContent = geofences[currentGeofenceId].name;
+        geofenceSelector.appendChild(option);
+
+        currentGeofenceId = null;
+        document.getElementById('controls').style.display = 'none';
+        document.getElementById('floor-selector').style.display = 'none';
+
+        document.getElementById('new-geofence').style.display = 'block';
+        isDrawingGeofence = false;
+        map.addControl(geofenceDrawControl);
+      }
+    });
+
+    document.getElementById('new-geofence').addEventListener('click', function () {
+      currentGeofenceId = null;
+      map.removeLayer(majorGeofenceLayerGroup);
+      document.getElementById('controls').style.display = 'none';
+      document.getElementById('new-geofence').style.display = 'none';
+      map.addControl(geofenceDrawControl);
+    });
+
+    document.getElementById('view-previous-geofences').addEventListener('click', function () {
+      var geofenceSelector = document.getElementById('geofence-selector');
+      var selectedGeofenceId = geofenceSelector.value;
+
+      if (selectedGeofenceId) {
+        currentGeofenceId = selectedGeofenceId;
+        majorGeofenceLayerGroup.clearLayers();
+        majorGeofenceLayerGroup.addLayer(geofences[currentGeofenceId].layer);
+        map.addLayer(majorGeofenceLayerGroup);
+
+        document.getElementById('controls').style.display = 'block';
+        currentFloor = geofences[currentGeofenceId].currentFloor;
+        addFloorSelector();
+        showCurrentFloorMarkings();
+        showCurrentFloorSubareas();
+      } else {
+        alert("Please select a geofence from the dropdown.");
+      }
+    });
+
+    document.getElementById('live-location-btn').addEventListener('click', function () {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(function (position) {
+          var lat = position.coords.latitude;
+          var lng = position.coords.longitude;
+
+          if (!liveLocationMarker) {
+            liveLocationMarker = L.marker([lat, lng]).addTo(map);
+          } else {
+            liveLocationMarker.setLatLng([lat, lng]);
+          }
+
+          map.setView([lat, lng], 18);
+        });
+      } else {
+        alert("Geolocation is not supported by your browser.");
+      }
+    });
+
+    // Function to check if a point is inside a polygon
+    function isPointInPolygon(point, polygon) {
+      var x = point.lat, y = point.lng;
+      var inside = false;
+      for (var i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        var xi = polygon[i].lat, yi = polygon[i].lng;
+        var xj = polygon[j].lat, yj = polygon[j].lng;
+        var intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+
+    // Function to update user's location and check for subareas
+    function updateInteriorLocation(initialCheck = false) {
+      if (navigator.geolocation && currentGeofenceId) {
+        navigator.geolocation.getCurrentPosition(function (position) {
+          var lat = position.coords.latitude;
+          var lng = position.coords.longitude;
+          var userLocation = { lat: lat, lng: lng };
+
+          if (!liveLocationMarker) {
+            liveLocationMarker = L.marker([lat, lng]).addTo(map);
+          } else {
+            liveLocationMarker.setLatLng([lat, lng]);
+          }
+
+          var currentSubareas = geofences[currentGeofenceId].subareas[currentFloor];
+          var userArea = "outside the defined areas";
+
+          currentSubareas.eachLayer(function (layer) {
+            if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
+              var polygonCoords = layer.getLatLngs()[0];
+              if (isPointInPolygon(userLocation, polygonCoords)) {
+                userArea = layer.getPopup().getContent().replace("Area: ", "");
+              }
+            }
+          });
+
+          if (initialCheck) {
+            showNotification("Your current location is in: " + userArea);
+          } else {
+            showNotification("You are now in: " + userArea);
+          }
+
+          // Center the map on the user's location
+          map.setView([lat, lng], map.getZoom());
+        }, function(error) {
+          console.error("Error getting location:", error);
+          showNotification("Unable to get your location");
+        }, {
+          enableHighAccuracy: true,
+          timeout: 5000,
+          maximumAge: 0
+        });
+      } else {
+        showNotification("Please select a geofence and ensure geolocation is enabled");
+      }
+    }
+
+    // Function to show notification
+    function showNotification(message) {
+      var notification = document.getElementById('notification');
+      notification.textContent = message;
+      notification.style.display = 'block';
+      setTimeout(function() {
+        notification.style.display = 'none';
+      }, 3000);
+    }
+
+    // Start interior navigation
+    document.getElementById('start-interior-navigation').addEventListener('click', function() {
+      if (currentGeofenceId) {
+        this.style.display = 'none';
+        document.getElementById('stop-interior-navigation').style.display = 'block';
+        
+        // Initial check for current location
+        updateInteriorLocation(true);
+        
+        // Start interval for continuous updates
+        interiorNavigationInterval = setInterval(function() {
+          updateInteriorLocation(false);
+        }, 2000);
+      } else {
+        alert("Please select a geofence first");
+      }
+    });
+
+    // Stop interior navigation
+    document.getElementById('stop-interior-navigation').addEventListener('click', function() {
+      this.style.display = 'none';
+      document.getElementById('start-interior-navigation').style.display = 'block';
+      clearInterval(interiorNavigationInterval);
+      if (liveLocationMarker) {
+        map.removeLayer(liveLocationMarker);
+        liveLocationMarker = null;
+      }
+    });
+
+    // Update floor when changed during interior navigation
+    document.getElementById('floor-selector').addEventListener('change', function() {
+      currentFloor = parseInt(this.value);
+      updateFloorDisplay();
+      showCurrentFloorMarkings();
+      showCurrentFloorSubareas();
+      if (interiorNavigationInterval) {
+        updateInteriorLocation(true); // Update location for new floor
+      }
+    });
+    var currentUserArea = null;
+var currentGeofenceName = null;
+var infoDisplay = null;
+
+function updateInteriorLocation(initialCheck = false) {
+  if (navigator.geolocation && currentGeofenceId) {
+    navigator.geolocation.getCurrentPosition(function (position) {
+      var lat = position.coords.latitude;
+      var lng = position.coords.longitude;
+      var userLocation = { lat: lat, lng: lng };
+
+      if (!liveLocationMarker) {
+        liveLocationMarker = L.marker([lat, lng]).addTo(map);
+      } else {
+        liveLocationMarker.setLatLng([lat, lng]);
+      }
+
+      var currentSubareas = geofences[currentGeofenceId].subareas[currentFloor];
+      var newUserArea = "Outside defined areas";
+
+      currentSubareas.eachLayer(function (layer) {
+        if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
+          var polygonCoords = layer.getLatLngs()[0];
+          if (isPointInPolygon(userLocation, polygonCoords)) {
+            newUserArea = layer.getPopup().getContent().replace("Area: ", "");
+          }
+        }
+      });
+
+      currentGeofenceName = geofences[currentGeofenceId].name;
+
+      if (initialCheck || newUserArea !== currentUserArea) {
+        currentUserArea = newUserArea;
+        showNotification("You entered: " + currentUserArea);
+      }
+
+      updateInfoDisplay();
+
+      // Center the map on the user's location
+      map.setView([lat, lng], map.getZoom());
+    }, function(error) {
+      console.error("Error getting location:", error);
+      showNotification("Unable to get your location");
+    }, {
+      enableHighAccuracy: true,
+      timeout: 5000,
+      maximumAge: 0
+    });
+  } else {
+    showNotification("Please select a geofence and ensure geolocation is enabled");
+  }
+}
+
+function updateInfoDisplay() {
+  if (!infoDisplay) {
+    infoDisplay = L.control({position: 'bottomleft'});
+    infoDisplay.onAdd = function () {
+      this._div = L.DomUtil.create('div', 'info');
+      this._div.style.backgroundColor = 'white';
+      this._div.style.padding = '6px 8px';
+      this._div.style.border = 'solid 1px #aaa';
+      this._div.style.borderRadius = '5px';
+      this.update();
+      return this._div;
+    };
+    infoDisplay.update = function () {
+      this._div.innerHTML = '<h4>Current Location</h4>' +
+        '<b>Geofence:</b> ' + (currentGeofenceName || 'N/A') + '<br>' +
+        '<b>Floor:</b> ' + currentFloor + '<br>' +
+        '<b>Area:</b> ' + (currentUserArea || 'N/A');
+    };
+    infoDisplay.addTo(map);
+  } else {
+    infoDisplay.update();
+  }
+}
+
+// Modify the start interior navigation event listener
+document.getElementById('start-interior-navigation').addEventListener('click', function() {
+  if (currentGeofenceId) {
+    this.style.display = 'none';
+    document.getElementById('stop-interior-navigation').style.display = 'block';
+    
+    // Initial check for current location
+    updateInteriorLocation(true);
+    
+    // Start interval for continuous updates
+    interiorNavigationInterval = setInterval(function() {
+      updateInteriorLocation(false);
+    }, 2000);
+  } else {
+    alert("Please select a geofence first");
+  }
+});
+
+// Modify the stop interior navigation event listener
+document.getElementById('stop-interior-navigation').addEventListener('click', function() {
+  this.style.display = 'none';
+  document.getElementById('start-interior-navigation').style.display = 'block';
+  clearInterval(interiorNavigationInterval);
+  if (liveLocationMarker) {
+    map.removeLayer(liveLocationMarker);
+    liveLocationMarker = null;
+  }
+  if (infoDisplay) {
+    map.removeControl(infoDisplay);
+    infoDisplay = null;
+  }
+});
+
+// Update the floor change event listener
+document.getElementById('floor-selector').addEventListener('change', function() {
+  currentFloor = parseInt(this.value);
+  updateFloorDisplay();
+  showCurrentFloorMarkings();
+  showCurrentFloorSubareas();
+  if (interiorNavigationInterval) {
+    updateInteriorLocation(true); // Update location for new floor
+  }
+});
+  </script>
+</body>
+</html>

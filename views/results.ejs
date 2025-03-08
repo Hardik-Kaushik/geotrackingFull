@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tracking Results</title>
+    <style>
+        /* styles.css */
+
+/* Ensure the body takes up the full height of the viewport */
+body {
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background-image: url(/pngtree-gold-treasure-map-clip-art-png-image_5903314.jpg);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+/* Style the form container */
+.form-container {
+
+    margin-top: 70px;
+    font-size: 20px;
+    border: 2px solid black;
+    border-radius: 10%;
+    height:60%;
+    width: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding:30px;
+    text-align: center;
+    background-color: #d3dfebd6;
+}
+
+/* Style the button container */
+.button-container {
+    margin-top: auto; /* Push the button to the bottom */
+    text-align: center;
+    padding: 20px;
+}
+
+/* Style the back button */
+.back-button {
+    display: inline-block;
+    padding: 10px 20px;
+    font-size: 16px;
+    color: #fff;
+    background-color: #007bff;
+    border: none;
+    border-radius: 5px;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.back-button:hover {
+    background-color: #0056b3;
+}
+h1{
+    font-size: 2em;
+}
+
+    </style>
+</head>
+<body>
+    <div class="form-container">
+        <h1>Tracking Results</h1><br><br>
+        <p><strong>Initial Coordinates:</strong> Latitude: <%= initialLat %>, Longitude: <%= initialLng %></p>
+        <p><strong>Final Coordinates:</strong> Latitude: <%= finalLat %>, Longitude: <%= finalLng %></p>
+        <p><strong>Total Entries:</strong> <%= enterCount %></p>
+        <p><strong>Total Exits:</strong> <%= exitCount %></p>
+        <p><strong>Total Elapsed Time:</strong> <%= elapsedTime %> seconds</p>
+    </div>
+
+    <!-- Back to Home Button -->
+    <div class="button-container">
+        <a href="/home" class="back-button">Back to Home</a>
+    </div>
+</body>
+</html>

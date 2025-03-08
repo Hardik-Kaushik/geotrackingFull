@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Location Tracker with Custom Polygon and Circle</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+
+        #map {
+            width: 100%;
+            height: 100vh;
+        }
+
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: white;
+            padding: 10px;
+            z-index: 1000;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+            display: flex;
+            gap: 10px;
+        }
+
+        #zoomControl {
+            margin-top: 10px;
+            text-align: center;
+        }
+
+        #zoomControl input[type=range] {
+            width: 100%;
+        }
+
+        .leaflet-container {
+            background: rgb(0, 0, 0);
+        }
+
+        button {
+            margin: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+    <div id="controls">
+        <button onclick="startTracking()">Start</button>
+        <button onclick="stopTracking()">End</button>
+        <button onclick="exitTracking()" style="display:none;" id="exitButton">Exit</button>
+    </div>
+    <div id="zoomControl">
+        <label for="zoomLevel">Zoom Level: <span id="zoomValue">15</span></label>
+        <input type="range" id="zoomLevel" min="5" max="15" value="15" step="1" oninput="updateZoomLevel(this.value)">
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+    <script src="https://unpkg.com/leaflet-pip@latest/leaflet-pip.min.js"></script>
+
+    <script>
+        var map = L.map('map').setView([0, 0], 15);
+
+        var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            noWrap: true
+        });
+
+        var googleStreets = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+            maxZoom: 20,
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
+        });
+
+        var googleSatellite = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+            maxZoom: 20,
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
+        });
+
+        var baseMaps = {
+            "Open Streets Map": osm,
+            "Google Streets": googleStreets,
+            "Google Satellite": googleSatellite
+        };
+
+        L.control.layers(baseMaps).addTo(map);
+
+        osm.addTo(map);
+
+        var drawnItems = new L.FeatureGroup();
+        map.addLayer(drawnItems);
+
+        var drawControl = new L.Control.Draw({
+            edit: {
+                featureGroup: drawnItems
+            },
+            draw: {
+                polygon: true,
+                circle: true,
+                marker: false,
+                polyline: false,
+                rectangle: false,
+                circlemarker: false
+            }
+        });
+        map.addControl(drawControl);
+
+        var polygon;
+        var circleGeofence;
+        var lastPositionInside = false;
+        var enterCount = 0;
+        var exitCount = 0;
+        var startTime, endTime;
+
+        function isPointInPolygon(lat, lng, polygon) {
+            if (!polygon) return false;
+            var point = [lng, lat];
+            var polygonGeoJSON = polygon.toGeoJSON();
+            var isInside = leafletPip.pointInLayer(point, L.geoJSON(polygonGeoJSON), true);
+            return isInside.length > 0;
+        }
+
+        function isPointInCircle(lat, lng, circle) {
+            if (!circle) return false;
+            var center = circle.getLatLng();
+            var radius = circle.getRadius();
+            var distance = map.distance(L.latLng(lat, lng), center);
+            return distance <= radius;
+        }
+
+        map.on(L.Draw.Event.CREATED, function (event) {
+            var layer = event.layer;
+
+            if (layer instanceof L.Polygon) {
+                if (polygon) {
+                    map.removeLayer(polygon);
+                }
+                polygon = layer;
+            } else if (layer instanceof L.Circle) {
+                if (circleGeofence) {
+                    map.removeLayer(circleGeofence);
+                }
+                circleGeofence = layer;
+            }
+
+            drawnItems.addLayer(layer);
+            startLiveLocationTracking();
+        });
+
+        if (!navigator.geolocation) {
+            console.log("Your browser doesn't support geolocation feature!");
+        } else {
+            var options = {
+                enableHighAccuracy: true
+            };
+
+            var intervalId;
+
+            function startLiveLocationTracking() {
+                clearInterval(intervalId);
+                intervalId = setInterval(() => {
+                    navigator.geolocation.getCurrentPosition(getPosition, handleError, options);
+                }, 2000);
+            }
+
+            function stopLiveLocationTracking() {
+                clearInterval(intervalId);
+                endTime = new Date();
+                document.getElementById('exitButton').style.display = 'block';
+            }
+
+            window.startTracking = function () {
+                startTime = new Date();
+                startLiveLocationTracking();
+                alert("Geotracking started");
+            };
+
+            window.stopTracking = function () {
+                stopLiveLocationTracking();
+                alert("Geotracking ended");
+            };
+
+            window.exitTracking = function () {
+                showResultsPage();
+            };
+        }
+
+        var marker, circle;
+
+        async function getPosition(position) {
+            var lat = position.coords.latitude;
+            var long = position.coords.longitude;
+            var accuracy = position.coords.accuracy;
+
+            if (marker) {
+                map.removeLayer(marker);
+            }
+
+            if (circle) {
+                map.removeLayer(circle);
+            }
+
+            marker = L.marker([lat, long]).addTo(map);
+            circle = L.circle([lat, long], { radius: accuracy }).addTo(map);
+
+            map.setView([lat, long], map.getZoom());
+
+            var insidePolygon = polygon && isPointInPolygon(lat, long, polygon);
+            var insideCircle = circleGeofence && isPointInCircle(lat, long, circleGeofence);
+
+            var insideGeofence = insidePolygon || insideCircle;
+
+            if (insideGeofence && !lastPositionInside) {
+                enterCount++;
+                showNotification("You are entering the geofence!");
+            } else if (!insideGeofence && lastPositionInside) {
+                exitCount++;
+                showNotification("You are exiting the geofence!");
+            }
+
+            lastPositionInside = insideGeofence;
+
+            console.log("Your coordinate is: Lat: " + lat + " Long: " + long + " Accuracy: " + accuracy);
+            console.log("Geofence enter count: " + enterCount);
+            console.log("Geofence exit count: " + exitCount);
+
+            await fetch('/api/locations', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ latitude: lat, longitude: long })
+            });
+        }
+
+        function handleError(error) {
+            console.log("Error occurred while getting geolocation:", error);
+        }
+
+        function updateZoomLevel(value) {
+            document.getElementById('zoomValue').innerText = value;
+            map.setZoom(parseInt(value));
+        }
+
+        function showNotification(message) {
+            alert(message);
+        }
+
+        function showResultsPage() {
+            var elapsedTime = (endTime - startTime) / 1000;
+            window.location.href = `/results?enterCount=${enterCount}&exitCount=${exitCount}&elapsedTime=${elapsedTime}`;
+        }
+    </script>
+</body>
+
+</html>

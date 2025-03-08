@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" type="text/css" href="/style.css">
+</head>
+<body>
+    <div class="form-container">
+        <h1>Manage User Access</h1>
+        <table>
+            <thead>
+                <tr>
+                    <th>Username</th>
+                    <th>Email</th>
+                    <th>Mobile</th>
+                    <th>Role</th>
+                </tr>
+            </thead>
+            <tbody>
+                <% users.forEach(user => { %>
+                <tr>
+                    <td><%= user.username %></td>
+                    <td><%= user.email %></td>
+                    <td><%= user.mobile %></td>
+                    <td>
+                        <form action="/update-role" method="post" class="admin-actions">
+                            <input type="hidden" name="userId" value="<%= user._id %>">
+                            <select name="role">
+                                <option value="admin" <%= user.role === 'admin' ? 'selected' : '' %>>Admin</option>
+                                <option value="sub-admin" <%= user.role === 'sub-admin' ? 'selected' : '' %>>Sub-Admin</option>
+                                <option value="viewer" <%= user.role === 'viewer' ? 'selected' : '' %>>Viewer</option>
+                            </select>
+                            <button type="submit" class="submit-btn">Update</button>
+                        </form>
+                    </td>
+                </tr>
+                <% }); %>
+            </tbody>
+        </table>
+        <div class="pagination">
+            <% if (current > 1) { %>
+                <a href="/admin?page=<%= current - 1 %>">Previous</a>
+            <% } %>
+            <% for (let i = 1; i <= pages; i++) { %>
+                <a href="/admin?page=<%= i %>" class="<%= current == i ? 'active' : '' %>"><%= i %></a>
+            <% } %>
+            <% if (current < pages) { %>
+                <a href="/admin?page=<%= current + 1 %>">Next</a>
+            <% } %>
+        </div>
+    </div>
+</body>
+</html>
