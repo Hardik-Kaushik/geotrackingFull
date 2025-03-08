@@ -16,10 +16,16 @@ const port = 5000;
 
 app.use('/public/', express.static('./public'));
 
-mongoose.connect(process.env.MONGO_URI)
-    .then(() => console.log('MongoDB connected'))
-    .catch(err => console.log(err));
-
+mongoose.connect(process.env.MONGO_URI, {
+    serverSelectionTimeoutMS: 30000, // Wait up to 30s before timing out
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+  })  
+  .then(() => console.log('Connected to MongoDB'))
+  .catch(err => console.error('MongoDB connection error:', err));
+  mongoose.set('bufferCommands', false);
+  mongoose.set('bufferTimeoutMS', 5000);
+    
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(bodyParser.json());
